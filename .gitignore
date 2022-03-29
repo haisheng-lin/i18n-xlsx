@@ -1,0 +1,19 @@
+# dependencies
+node_modules
+
+# ide config
+.vscode
+
+# excel files
+*.xlsx
+
+# default imports and exports folder
+imports
+exports
+
+# misc
+.DS_Store
+npm-debug.log*
+
+# jest coverage
+coverage
