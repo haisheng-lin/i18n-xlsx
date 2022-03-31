@@ -4,6 +4,7 @@ const path = require('path');
 
 const extractParams = require('./utils/params');
 const { buildObjectFromPairs } = require('./utils/build');
+const { getResourcesFromRows } = require('./utils/resources');
 const logger = require('./utils/logger');
 
 function main() {
@@ -21,54 +22,38 @@ function main() {
   const outputDir = path.resolve(__dirname, params.outputDir);
 
   if (!fs.existsSync(inputFile)) {
-    logger.error(`File does not exist: ${inputFile}.`);
-    return;
+    throw new Error(`File does not exist: ${inputFile}.`);
   }
-
-  // 高版本 node 应该用 fs.rmSync
-  const rmSync = fs.rmSync || fs.rmdirSync;
-  rmSync(outputDir, { recursive: true });
-  fs.mkdirSync(outputDir, { recursive: true });
 
   try {
     const sheets = xlsx.parse(inputFile);
     const [firstSheet] = sheets;
     const rows = firstSheet.data;
-    const sheetResources = {};
-    // 遍历 sheet 表格，搜集数据至 sheetResources
-    for (let r = 0; r < rows.length; r++) {
-      // 无需遍历第一列了
-      for (let c = 1; c < rows[r].length; c++) {
-        if (r === 0) {
-          const name = rows[r][c];
-          sheetResources[name] = [];
-        } else {
-          const path = rows[r][0]; // 文案 key
-          const value = rows[r][c]; // 文案 value
-          const resourceName = rows[0][c]; // 语言名称
-          const resource = sheetResources[resourceName];
-          resource.push({ path, value });
-        }
-      }
-    }
+    const resources = getResourcesFromRows(rows);
 
-    // 得到语言名称以及对应的 js 对象
-    const resources = Object.keys(sheetResources).map((resourceName) => ({
-      name: resourceName,
-      value: buildObjectFromPairs(sheetResources[resourceName]),
-    }));
-
-    for (const resource of resources) {
-      const { name, value } = resource;
-      const resourcePathName = path.resolve(outputDir, name);
-      // 创建资源文件夹
-      fs.mkdirSync(resourcePathName);
-      // 写入 index.js 文件
-      fs.writeFileSync(
-        path.resolve(resourcePathName, 'index.js'),
-        `module.exports = ${JSON.stringify(value)}`
-      );
+    if (fs.existsSync(outputDir)) {
+      // 高版本 node 应该用 fs.rmSync
+      const rmSync = fs.rmSync || fs.rmdirSync;
+      rmSync(outputDir, { recursive: true });
     }
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    Object.keys(resources).forEach((language) => {
+      const languageResource = resources[language];
+      Object.keys(resources[language]).forEach((filePath) => {
+        const keyValuePairs = languageResource[filePath];
+        const value = buildObjectFromPairs(keyValuePairs);
+        const index = filePath.lastIndexOf('/');
+        const relativeFilePath = filePath.substring(0, index); // components
+        const fileName = filePath.substring(index + 1); // index.js
+        const pathName = path.resolve(outputDir, language, relativeFilePath); // outputDir/zh-CN/components
+        fs.mkdirSync(pathName, { recursive: true });
+        fs.writeFileSync(
+          path.resolve(pathName, fileName),
+          `module.exports = ${JSON.stringify(value, null, 2)}`
+        );
+      });
+    });
 
     logger.success(
       `Resources were successfully imported, please checkout ${outputDir}`
